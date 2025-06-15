@@ -7,21 +7,26 @@
 # 2: Files newer than what is on the server, should be copied to the server (standard rsync option)
 # 3: Files deleted locally should also be deleted remote
 
+# The problem: 
+# - The linux file-system does not keep history of file deltions.
+# To solve this problem, the following is done:
+# - All clients create a deletion log in the folder /.deleted/, which is uploaded on sync
+
+
 # To execute rule 1, the following is done:
-# 1: Server side keeps a log of all the files the user deleted
-# 2: Once the client is up to date, the script downloads the list of deleted files, and executes it locally
+# 1: The client downloads the /.deleted folder from the server and deletes all files listed, if they exist
+# 2: Once the client is up to date it will dry-run a backup to the server, 
+#    - This is to let rsync report all files it will delete on the server, based on compares of local and remote
+# 3: The result of that dry-run compare is stored in a new file in the loal /.deleted/ folder 
+# 4: The content of /.deleted/ is then copied to the server on sync
+# Thus the server has all information on what files were deleted locally. 
 
-
-given the lead, using the following process:
-# A list is 
-# The script will update the server with anything that is new on the client side.
-# Any file that 
-
+# ================================================================================
 # This script uses basic functionalities of the Linux Bash commands,
 # As that framework is mature enough to do almost everything you can imagine
 # No dependencies on fancy libraries.
 
-# WORK IN PROGRESS
+# WORK IN PROGRESS, NOT TESTED
 deleteFilesInDeletedLog(){
 
     deletedLogFileName="$1"
