@@ -238,9 +238,11 @@ executeDestinationDeletions(){
     # - We will keep a local score on what date/time the last check was, 
     #   so we only do from most recent to that point
 
-    echo "=============================="
-    echo "Perform all deletions, after : $mostRecentBackupDate"
-    echo "Using compare-string         : '$compareString'"
+    echo "
+==============================
+Perform all deletions, after : $mostRecentBackupDate
+Using compare-string         : '$compareString'
+"
 
     find "$sourceDir.deleted/" -print0 |
     while IFS= read -r -d '' deleteLog_FileName
@@ -249,9 +251,9 @@ executeDestinationDeletions(){
         # Compare file with comare string
         if [ "$deleteLog_FileName" \> "$sourceDir.deleted/$compareString" ]
         then
-            echo "========="
-            echo "Execute : $deleteLog_FileName"
-            echo "========="
+            echo "
+Execute : $deleteLog_FileName
+========="
             deleteFilesInDeletedFilesLog "$sourceDir" "$deleteLog_FileName"
         fi
         
@@ -272,16 +274,17 @@ runFirstTime(){
 
     mostRecentBackup_File="$sourceDir$gl_mostRecentBackupFile"
 
-    echo "=============================="
-    echo "Check if this is first run for: $sourceDir"
+    echo "
+==============================
+Check if this is first run for: $sourceDir"
     # Check "doanloaded" log file
     # Older than a day? This machine is probably out of sync. Get server data
 
     if [[ -f "$mostRecentBackup_File-$identifier" ]]
     then
-        echo "We already initiated this mirror-backup. No download of intial files needed."
+        echo "- We already initiated this mirror-backup. No download of intial files needed."
     else
-        echo "This is the first run. Download all files from destination."
+        echo "- This is the first run. Download all files from destination."
         # Copy from server to client.
         rsync -aruvP "$destinationDir" "$sourceDir"
         # We do NOT delete local files that are not present on server 
@@ -314,8 +317,8 @@ mirrorClientToServer(){
     mostRecentBackup_File="$sourceDir$gl_mostRecentBackupFile"
 
     echo "
-Mirror client to server
-=======================
+Mirror source and destination
+=============================
 Executing--"
 
     # Where do we store the logs?
@@ -488,7 +491,7 @@ The backup can only be made to an existing location. Exit backup."
 
 
     # Notify user https://ss64.com/bash/notify-send.html
-    notify-send -t 5000 'Running backup' "Running the backup...."
+    notify-send -t 5000 'Running mirror-backup' "Running the backup...."
 
     # We run this:
     # 1: When the user logs in
@@ -508,73 +511,10 @@ The backup can only be made to an existing location. Exit backup."
     mirrorClientToServer "$sourceDir" "$destination_Dir" "$identifier"
     # destinationfolder is an identifier for the last download date/time
 
-    notify-send -t 5000 'Done running backup' "All files are safe on server"
+    notify-send -t 5000 'Done running mirror-backup' "All files are safe on server"
 
 }
-date=$(date '+%Y%m%d%H%M%S')
-echo "$date"
-sourceDir="./"
-DIR_TMP="$sourceDir.deleted/"
-flineName="$DIR_TMP$date"
 
-# find $DIR_TMP -type f -size -10c -delete
-
-# # rsync --dry-run --delete -ar --info=DEL  "./source/" "./timemachine/snapshot/source/" >> "$flineName"
-
-# while IFS= read -r line
-# do
-#     fileName=${line:9}
-#     echo "$fileName"
-# done 
-
-# str="abc1def"
-# if [[ "$str" == abc?def ]]; then
-#     echo "String matches the pattern 'abc?def'"
-# fi
-
-# if  [[ "hjjhjh/oo" == *"/" ]]
-# then 
-#     echo "proper dir"
-# else
-#     echo "not proper dir"
-# fi
-#echo "$OUTPUT"
-
-# https://www.baeldung.com/linux/rsync-output-changed-files-list
-
-echo "$(date '+%Y-%m%d-%H%M%S')" > "$gl_mostRecentBackupFile"
-
-mostRecent=$(<"$gl_mostRecentBackupFile")
-echo "" || "$mostRecent"
-if [[ "$gl_mostRecentBackupFile" ]]
-then
-    echo "Previous most recent date"
-fi
-
-# traverse list
-if [[ "./.deleted/" ]]
-then
-    echo "Deleted existsd"
-else
-    echo "Deleted not found"
-fi
-mostRecent="20250616134439"
-
-location="./.deleted/"
-# find "$location" -print0 |
-# while IFS= read -r -d '' file
-# do
-   
-#     #Use %P instead of %f. This just cut off the path given in the command line. 
-#     # Cut containing folder from string 
-#     if [ "$file" \> "$location$mostRecent" ]
-#     then
-#         echo "- Execute : $file"
-#     else
-#         echo "- Skip : $file"
-#     fi
-    
-# done   
 
 # Parameters are: 
 # 1: Backup-ID - any string value to help you and the system to identify the backup, 
