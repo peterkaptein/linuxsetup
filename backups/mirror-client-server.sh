@@ -58,7 +58,7 @@
 # https://askubuntu.com/questions/409611/desktop-notification-when-long-running-commands-complete
 
 # Local
-gl_backupLogDir="./.backups"
+gl_backupLogDir="../.backups"
 gl_mostRecentBackupFile="$gl_backupLogDir/.mostrecentbackup"
 
 gl_into_warning="
@@ -161,7 +161,7 @@ downloadDeletedList(){
 
 
     # Copy .deleted/ log from server to client, so we know what the status is on that
-    rsync -aruvP "$destinationDir.deleted/" "$sourceDir.deleted/"
+    rsync -aruP --delete "$destinationDir.deleted/" "$sourceDir.deleted/"
     # We will first cleanup this source
 
 }
@@ -190,7 +190,7 @@ deleteFilesInDeletedFilesLog(){
         then
             fileDelCount=$( fileDelCount+1 )
             echo "- remove file     : $fullPath"
-            #rm "$fullPath" # remove all content 
+            rm "$fullPath" # remove all content 
         else
             fileAlreadyDeletedCount=$(( fileAlreadyDeletedCount+1 ))
         fi
@@ -199,7 +199,7 @@ deleteFilesInDeletedFilesLog(){
         then
             foldersDelCount=$(( foldersDelCount+1 ))
             echo "- remove dir      : $fullPath"
-            #rm "$fullPath" # remove all content 
+            rm "$fullPath" # remove all content 
         else
             foldersAlreadyDeletedCount=$(( foldersAlreadyDeletedCount+1 ))
         fi
@@ -222,11 +222,13 @@ executeDestinationDeletions(){
     # Most recent date?
     mostRecentBackupDate="0000000000" # Do all files
 
+    mostRecentBackup_File="$sourceDir$gl_mostRecentBackupFile"
+
     # Do we have a most recent backup date?
-    if [[ -f "$gl_mostRecentBackupFile-$identifier" ]]
+    if [[ -f "$mostRecentBackup_File-$identifier" ]]
     then
         # Get date of most recent backup
-        mostRecentBackupDate=$(<"$gl_mostRecentBackupFile-$identifier")
+        mostRecentBackupDate=$(<"$mostRecentBackup_File-$identifier")
     fi
     
     compareString="deleted-$mostRecentBackupDate"
@@ -237,7 +239,7 @@ executeDestinationDeletions(){
     #   so we only do from most recent to that point
 
     echo "=============================="
-    echo "Execute all deletions, after : $mostRecentBackupDate"
+    echo "Perform all deletions, after : $mostRecentBackupDate"
     echo "Using compare-string         : '$compareString'"
 
     find "$sourceDir.deleted/" -print0 |
@@ -268,16 +270,18 @@ runFirstTime(){
     destinationDir="$2" # has trailing /
     identifier="$3"
 
+    mostRecentBackup_File="$sourceDir$gl_mostRecentBackupFile"
+
     echo "=============================="
     echo "Check if this is first run for: $sourceDir"
     # Check "doanloaded" log file
     # Older than a day? This machine is probably out of sync. Get server data
 
-    if [[ -f "$gl_mostRecentBackupFile-$identifier" ]]
+    if [[ -f "$mostRecentBackup_File-$identifier" ]]
     then
-        echo "We already initiated this location, no action taken"
+        echo "We already initiated this mirror-backup. No download of intial files needed."
     else
-        echo "This is the first run. Download all files from server."
+        echo "This is the first run. Download all files from destination."
         # Copy from server to client.
         rsync -aruvP "$destinationDir" "$sourceDir"
         # We do NOT delete local files that are not present on server 
@@ -305,29 +309,41 @@ mirrorClientToServer(){
     destinationDir="$2" # has trailing /
     identifier="$3"
 
+    # Where we store our logs: relative to source
+    backupLog_Dir="$sourceDir$gl_backupLogDir"
+    mostRecentBackup_File="$sourceDir$gl_mostRecentBackupFile"
+
+    echo "
+Mirror client to server
+=======================
+Executing--"
+
     # Where do we store the logs?
 
     # https://askubuntu.com/questions/706903/get-a-list-of-deleted-files-from-rsync
 
+    mkdir -p "$backupLog_Dir/$identifier"
+
     # Step 1: Determine what files were deleted locally, by running a compare with the server
     date=$(date '+%Y-%m%d-%H%M%S')                # Date/time of logging
     deletedLogFile="$sourceDir.deleted/deleted-$date.txt"  # File to store compare in
-    outgoingLogFile="$gl_backupLogDir/$date-out.txt"
-    incomingLogFile="$gl_backupLogDir/$date-in.txt"
+    outgoingLogFile="$backupLog_Dir/$identifier/$date-out.txt"
+    incomingLogFile="$backupLog_Dir/$identifier/$date-in.txt"
 
     # Assure the logging-directories are there
     mkdir -p "$sourceDir.deleted"
-    mkdir -p "$gl_backupLogDir"
+    mkdir -p "$backupLog_Dir"
+
+    # Do a dry-run of rsync to get list of locally deleted files. 
+    echo "Step 1   : Create a list of locally deleted files via rsync dry-run."
+    rsync --dry-run --delete -ar --info=DEL  "$sourceDir" "$destinationDir" >> "$deletedLogFile"
+    # --info=DEL  : Only register/log locally deleted files.
+    # >> $deletedLogFile : Store result of dry run in deletedLogFile location
 
     # Remove empty files
     find "$sourceDir.deleted/" -type f -size -10c -delete
     # when a backup did not lead to deletes, the file is empty
     # -size -10c = any file less than 10 bytes will be deleted
-
-    # Do a dry-run of rsync to get list of locally deleted files. 
-    rsync --dry-run --delete -ar --info=DEL  "$sourceDir" "$destinationDir" >> "$deletedLogFile"
-    # --info=DEL  : Only register/log locally deleted files.
-    # >> $deletedLogFile : Store result of dry run in deletedLogFile location
 
     # Step 2: Run sync process, 
     # - Copy all changes from local to server.
@@ -337,12 +353,30 @@ mirrorClientToServer(){
 
     # We assume that a time-machine backup is running on the server, to safeguard accidental deletes 
 
+    echo "Step 2.a : Push new files from source to destination"
     # Step 2.1: First update server, delete locally deleted files also on destination 
+    echo "rsync Source to Destination
+==========================
+From  : $sourceDir 
+To    : $destinationDir
+
+If nothing is listed below, the destination was already up to date.
+
+" >> "$outgoingLogFile"
     rsync --delete -aruvP --info=BACKUP "$sourceDir" "$destinationDir" >> "$outgoingLogFile"
     # This assures that files we removed from source are also removed on the destination, 
     # before dowloading all changes from the server 
 
     # Step 2.2: Then update client, delete files in source that were deleted on the destination
+    echo "Step 2.b : Pull new files from destination to source"
+    echo "rsync Destination to Source
+==========================
+From  : $destinationDir 
+To    : $sourceDir
+
+If nothing is listed below, the source was already up to date.
+
+" >> "$incomingLogFile"
     rsync --delete -aruvP --info=BACKUP "$destinationDir" "$sourceDir" >> "$incomingLogFile"
     # -aruvP = archive with creation / modify dates intact, recursive, only updates, P
     # --info=BACKUP = only log files backed up
@@ -350,8 +384,12 @@ mirrorClientToServer(){
     # In theory we already removed all destination-deleted files in source
     # But as this is a standard flag on rsy# -aruvP = archive with creation / modify dates intact, recursive, only updates, Pnc we use --delete as a double measure 
     
-    # Step 3: Rgister the date of this most recent backup
-    echo "$(date '+%Y-%m%d-%H%M%S')" > "$gl_mostRecentBackupFile-$identifier"
+    # Step 3: Register the date of this most recent backup
+    echo "Step 3   : Save timestamp of this most recent backup"
+    echo "$(date '+%Y-%m%d-%H%M%S')" > "$mostRecentBackup_File-$identifier"
+
+    echo "
+Done. Logs can be found in ../.backups"
 }
 
 runMirrorBackup(){
@@ -459,7 +497,6 @@ The backup can only be made to an existing location. Exit backup."
     # Step 1: Check if this is the first time for source, and take action
     runFirstTime "$sourceDir" "$destination_Dir" "$identifier"
 
-    return
 
     # Step 2: Clean all remotely deleted files from here as well
     # So we stay in sync with remote source
@@ -474,6 +511,70 @@ The backup can only be made to an existing location. Exit backup."
     notify-send -t 5000 'Done running backup' "All files are safe on server"
 
 }
+date=$(date '+%Y%m%d%H%M%S')
+echo "$date"
+sourceDir="./"
+DIR_TMP="$sourceDir.deleted/"
+flineName="$DIR_TMP$date"
+
+# find $DIR_TMP -type f -size -10c -delete
+
+# # rsync --dry-run --delete -ar --info=DEL  "./source/" "./timemachine/snapshot/source/" >> "$flineName"
+
+# while IFS= read -r line
+# do
+#     fileName=${line:9}
+#     echo "$fileName"
+# done 
+
+# str="abc1def"
+# if [[ "$str" == abc?def ]]; then
+#     echo "String matches the pattern 'abc?def'"
+# fi
+
+# if  [[ "hjjhjh/oo" == *"/" ]]
+# then 
+#     echo "proper dir"
+# else
+#     echo "not proper dir"
+# fi
+#echo "$OUTPUT"
+
+# https://www.baeldung.com/linux/rsync-output-changed-files-list
+
+echo "$(date '+%Y-%m%d-%H%M%S')" > "$gl_mostRecentBackupFile"
+
+mostRecent=$(<"$gl_mostRecentBackupFile")
+echo "" || "$mostRecent"
+if [[ "$gl_mostRecentBackupFile" ]]
+then
+    echo "Previous most recent date"
+fi
+
+# traverse list
+if [[ "./.deleted/" ]]
+then
+    echo "Deleted existsd"
+else
+    echo "Deleted not found"
+fi
+mostRecent="20250616134439"
+
+location="./.deleted/"
+# find "$location" -print0 |
+# while IFS= read -r -d '' file
+# do
+   
+#     #Use %P instead of %f. This just cut off the path given in the command line. 
+#     # Cut containing folder from string 
+#     if [ "$file" \> "$location$mostRecent" ]
+#     then
+#         echo "- Execute : $file"
+#     else
+#         echo "- Skip : $file"
+#     fi
+    
+# done   
 
 # Parameters are: 
 # 1: Backup-ID - any string value to help you and the system to identify the backup, 
@@ -489,3 +590,5 @@ The backup can only be made to an existing location. Exit backup."
 
 runMirrorBackup "bckp-id-001" "./source/" "./backup/" "source" "no-confirm"
 # This setup allows you to configure and manage multiple backups from one script
+
+
